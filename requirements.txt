@@ -1,6 +1,0 @@
-pillow
-numpy
-ephem
-icalendar
-recurring-ical-events
-requests

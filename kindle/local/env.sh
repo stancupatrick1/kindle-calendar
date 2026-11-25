@@ -1,6 +1,7 @@
-# Verifică la fiecare 30 de minute, non-stop.
+# Verifică la fiecare 5 minute, non-stop (recomandat cu Kindle-ul la încărcător).
 # Ecranul se redesenează doar când s-a schimbat ceva (vezi fetch-dashboard.sh).
-export REFRESH_SCHEDULE="*/30 * * * *"
+# Pe baterie, pune "*/30 * * * *" ca să țină mai mult.
+export REFRESH_SCHEDULE="*/5 * * * *"
 export TIMEZONE="Europe/Bucharest"
 
 # Refresh complet (fără „fantome” pe e-ink) la fiecare 3 schimbări
