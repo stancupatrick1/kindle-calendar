@@ -466,7 +466,7 @@ function rotateGray(src, w, h, deg) {
   return out;
 }
 
-export function renderLandscape({ day, events, allday, wx, ast, label, outfit, weatherRows, rotate = 90 }) {
+export function renderLandscape({ day, events, allday, wx, ast, label, outfit, weatherRows, rotate = 90, greeting }) {
   const LW = 1448, LH = 1072, HEADER = 84;
   const s = [];
   const PX = 1000;              // începutul panoului din dreapta
@@ -475,7 +475,6 @@ export function renderLandscape({ day, events, allday, wx, ast, label, outfit, w
   // bara de sus
   s.push(`<rect x="0" y="0" width="${LW}" height="${HEADER}" fill="black"/>`);
   s.push(text(label, M + 8, HEADER / 2, 44, { bold: true, fill: 255, anchor: "lm" }));
-  s.push(text("◀  glisează pentru altă zi  ▶", LW / 2, HEADER / 2, 22, { fill: 170, anchor: "mm" }));
   s.push(text(`${ZILE[day.wd]} ${day.d} ${LUNI[day.m - 1]}`, LW - M - 8, HEADER / 2, 44, { bold: true, fill: 255, anchor: "rm" }));
 
   // ---- stânga: orarul
@@ -619,6 +618,9 @@ export function renderLandscape({ day, events, allday, wx, ast, label, outfit, w
     const mins = Math.floor((ast.set - ast.rise) / 60000);
     s.push(text(`${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m de lumină`, cx, arcBase + 100, 24, { anchor: "ma" }));
   }
+
+  // salutul din colțul din dreapta-jos
+  if (greeting) s.push(text(greeting, PX + PW, LH - 28, 30, { bold: true, anchor: "rs" }));
 
   let gray = svgToGray(s, LW, LH);
   if (rotate === 90 || rotate === 270) return encodeGray(rotateGray(gray, LW, LH, rotate), LH, LW);

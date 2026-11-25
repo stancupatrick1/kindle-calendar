@@ -50,15 +50,21 @@ export default async (req) => {
     return new Response("Calendar indisponibil", { status: 503 });
   }
 
-  // Ziua afișată: azi (după ora SWITCH_HOUR, implicit 20:00, mâine) + d zile (d vine de la swipe)
-  const switchHour = parseInt(Netlify.env.get("SWITCH_HOUR") || "20", 10);
+  // Ziua afișată: azi; după SWITCH_TIME (implicit 21:30) ziua de mâine.
+  // După miezul nopții, „mâine” devine „azi”, deci dimineața ecranul arată din nou ziua curentă.
+  const [swH, swM] = (Netlify.env.get("SWITCH_TIME") || "21:30").split(":").map(Number);
   const now = local(new Date());
-  const base = now.h >= switchHour ? 1 : 0;
-  const offset = Math.max(-base, Math.min(6, parseInt(url.searchParams.get("d") || "0", 10) || 0));
-  const diff = base + offset; // câte zile după azi
-  const day = diff ? local(zoned(now.y, now.m, now.d + diff, 12)) : now;
-  const ZILE_LUNGI = ["DUMINICĂ", "LUNI", "MARȚI", "MIERCURI", "JOI", "VINERI", "SÂMBĂTĂ"];
-  const label = diff === 0 ? "AZI" : diff === 1 ? "MÂINE" : ZILE_LUNGI[day.wd];
+  const minutes = now.h * 60 + now.mi;
+  const diff = minutes >= swH * 60 + (swM || 0) ? 1 : 0;
+  const day = diff ? local(zoned(now.y, now.m, now.d + 1, 12)) : now;
+  const label = diff ? "MÂINE" : "AZI";
+
+  const name = Netlify.env.get("NAME") || "Patrick";
+  const greeting =
+    now.h >= 6 && now.h < 12 ? `Bună dimineața, ${name}!` :
+    now.h >= 12 && now.h < 18 ? `Bună ziua, ${name}!` :
+    diff === 0 && now.h >= 18 ? `Bună seara, ${name}!` :
+    `Noapte bună, ${name}!`;
 
   const { events, allday } = eventsFor(day, icsTexts);
   const wx = await weather(lat, lon);
@@ -66,12 +72,12 @@ export default async (req) => {
   const outfit = wx ? clothingFor(diff === 0 ? wx.feels : dayWx?.feels) : null;
   const ast = astro(day, lat, lon);
 
-  const rotate = parseInt(url.searchParams.get("r") || "0", 10);
+  // orizontal implicit; ROTATE=270 dacă Kindle-ul e montat invers, ROTATE=0 pentru vertical
+  const rotate = parseInt(url.searchParams.get("r") || Netlify.env.get("ROTATE") || "90", 10);
   let png;
   if (rotate === 90 || rotate === 270) {
-    const cap = label[0] + label.slice(1).toLowerCase();
-    const weatherRows = diff === 0 ? [["Azi", wx?.today], ["Mâine", wx?.tomorrow]] : [["Azi", wx?.today], [cap, dayWx]];
-    png = renderLandscape({ day, events, allday, wx, ast, label, outfit, weatherRows, rotate });
+    const weatherRows = [["Azi", wx?.today], ["Mâine", wx?.tomorrow]];
+    png = renderLandscape({ day, events, allday, wx, ast, label, outfit, weatherRows, rotate, greeting });
   } else {
     png = renderDashboard({ day, events, allday, wx, outfit, ast, label });
   }
