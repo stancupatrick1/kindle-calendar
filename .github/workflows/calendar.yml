@@ -1,0 +1,40 @@
+name: Actualizează calendarul
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # la fiecare 15 minute (GitHub poate întârzia câteva minute)
+  workflow_dispatch:          # buton manual „Run workflow”
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Generează imaginea
+        env:
+          ICS_URLS: ${{ secrets.ICS_URLS }}
+          LAT: ${{ vars.LAT }}
+          LON: ${{ vars.LON }}
+          ROTATE: ${{ vars.ROTATE }}
+          OUT: site/${{ secrets.IMAGE_NAME }}.png
+        run: python render.py
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
