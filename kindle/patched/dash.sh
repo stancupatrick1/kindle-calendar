@@ -27,11 +27,10 @@ init() {
 
   echo "Starting dashboard with $REFRESH_SCHEDULE refresh..."
 
-  # firmware vechi: /etc/init.d/framework; firmware nou (5.16+): upstart
+  # Pe firmware vechi oprim interfața Kindle. Pe firmware nou NU: oprirea ei
+  # (stop framework) oprește și procesul pornit din KUAL, deci și calendarul.
   if [ -x /etc/init.d/framework ]; then
     /etc/init.d/framework stop
-  else
-    stop framework >/dev/null 2>&1 || stop lab126_gui >/dev/null 2>&1
   fi
   initctl stop webreader >/dev/null 2>&1
   echo powersave >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
