@@ -444,3 +444,183 @@ export function renderDashboard({ day, events, allday, wx, ast, label = "AZI", o
   for (let i = 0; i < W * H; i++) gray[i] = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
   return encodeGray(gray, W, H);
 }
+
+// ------------------------------------------------------------ orizontal (landscape)
+
+function svgToGray(parts, w, h) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="white"/>${parts.join("")}</svg>`;
+  const px = new Resvg(svg, { background: "white", font: { loadSystemFonts: false } }).render().pixels;
+  const gray = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) gray[i] = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
+  return gray;
+}
+
+// rotește imaginea cu 90° (în sensul acelor) sau 270°, ca să încapă pe ecranul vertical al Kindle-ului
+function rotateGray(src, w, h, deg) {
+  const out = new Uint8Array(w * h); // noua lățime = h, noua înălțime = w
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = src[y * w + x];
+    if (deg === 90) out[x * h + (h - 1 - y)] = v;
+    else out[(w - 1 - x) * h + y] = v;
+  }
+  return out;
+}
+
+export function renderLandscape({ day, events, allday, wx, ast, label, outfit, weatherRows, rotate = 90 }) {
+  const LW = 1448, LH = 1072, HEADER = 84;
+  const s = [];
+  const PX = 1000;              // începutul panoului din dreapta
+  const PW = LW - M - PX;       // lățimea panoului
+
+  // bara de sus
+  s.push(`<rect x="0" y="0" width="${LW}" height="${HEADER}" fill="black"/>`);
+  s.push(text(label, M + 8, HEADER / 2, 44, { bold: true, fill: 255, anchor: "lm" }));
+  s.push(text("◀  glisează pentru altă zi  ▶", LW / 2, HEADER / 2, 22, { fill: 170, anchor: "mm" }));
+  s.push(text(`${ZILE[day.wd]} ${day.d} ${LUNI[day.m - 1]}`, LW - M - 8, HEADER / 2, 44, { bold: true, fill: 255, anchor: "rm" }));
+
+  // ---- stânga: orarul
+  const TR = PX - 30; // marginea dreaptă a orarului
+  let top = HEADER + 16;
+  const n = events.length;
+  s.push(text(n === 0 ? "Zi liberă" : `${n} ${n === 1 ? "eveniment" : "evenimente"}`, M, top, 36, { bold: true }));
+  if (n) {
+    const last = events.reduce((a, e) => (e.end > a ? e.end : a), events[0].end);
+    const lastTxt = events.some((e) => e.endsNextDay) ? "24:00" : hhmm(last);
+    s.push(text(`${hhmm(events[0].start)} – ${lastTxt}`, TR, top + 4, 30, { anchor: "ra" }));
+  }
+  top += 52;
+  if (allday.length) {
+    let x = M;
+    for (const t of allday) {
+      const txt = fit(t, 24, true, 360);
+      const w = textWidth(txt, 24, true) + 24;
+      if (x + w > TR) break;
+      s.push(`<rect x="${x}" y="${top}" width="${w}" height="38" rx="9" fill="white" stroke="black" stroke-width="3"/>`);
+      s.push(text(txt, x + 12, top + 19, 24, { bold: true, anchor: "lm" }));
+      x += w + 10;
+    }
+    top += 50;
+  }
+
+  const bottom = LH - 16;
+  let h0 = 7, h1 = 22;
+  for (const ev of events) {
+    const ls = local(ev.start), le = local(ev.end);
+    h0 = Math.min(h0, ls.h);
+    h1 = Math.max(h1, ev.endsNextDay ? 24 : le.h + (le.mi ? 1 : 0));
+  }
+  h1 = Math.min(Math.max(h1, h0 + 1), 24);
+  const hourPx = (bottom - top - 24) / (h1 - h0);
+  const fh = hourPx > 40 ? 26 : 22;
+  const x0 = M + 90;
+  const yOf = (date, isEnd) => {
+    const l = local(date);
+    let hh = l.h + l.mi / 60;
+    if (isEnd && hh === 0) hh = 24;
+    return top + 12 + (hh - h0) * hourPx;
+  };
+  for (let h = h0; h <= h1; h++) {
+    const y = top + 12 + (h - h0) * hourPx;
+    s.push(text(`${String(h).padStart(2, "0")}:00`, M, y, fh, { anchor: "lm" }));
+    s.push(`<line x1="${x0}" y1="${y}" x2="${TR}" y2="${y}" stroke="${g(100)}" stroke-width="1.5" stroke-dasharray="2 6"/>`);
+  }
+  layoutColumns(events);
+  const span = TR - x0 - 6;
+  for (const ev of events) {
+    const ya = yOf(ev.start, false);
+    const yb = Math.max(yOf(ev.end, true), ya + 30);
+    const cw = span / ev.ncols;
+    const xa = x0 + 6 + ev.col * cw, xb = xa + cw - 6;
+    s.push(`<rect x="${xa}" y="${ya + 2}" width="${xb - xa}" height="${yb - ya - 4}" rx="10" fill="black"/>`);
+    const hAv = yb - ya - 4;
+    const fs = hAv >= 44 ? 30 : Math.max(16, Math.floor(hAv * 0.64));
+    const tx = xa + 14;
+    const title = fit(ev.title, fs, true, xb - tx - 12);
+    if (hAv >= 86) {
+      s.push(text(title, tx, ya + 10, fs, { bold: true, fill: 255 }));
+      s.push(text(`${hhmm(ev.start)} – ${ev.endsNextDay ? "24:00" : hhmm(ev.end)}`, tx, ya + 10 + fs + 6, 22, { fill: 255 }));
+    } else {
+      s.push(text(title, tx, (ya + yb) / 2, fs, { bold: true, fill: 255, anchor: "lm" }));
+    }
+  }
+
+  // ---- dreapta: vremea
+  s.push(`<line x1="${PX - 14}" y1="${HEADER + 14}" x2="${PX - 14}" y2="${LH - 14}" stroke="black" stroke-width="3"/>`);
+  let py = HEADER + 14;
+  s.push(`<rect x="${PX}" y="${py}" width="${PW}" height="42" rx="6" fill="black"/>`);
+  s.push(text("VREMEA", PX + 12, py + 21, 26, { bold: true, fill: 255, anchor: "lm" }));
+  py += 56;
+  if (wx) {
+    s.push(text(`${wx.now}°`, PX, py, 78, { bold: true }));
+    s.push(text(`se simte ca ${wx.feels}°`, PX, py + 96, 24));
+  }
+  if (outfit) {
+    const isz = outfit.kinds.length > 1 ? 82 : 100;
+    const n2 = outfit.kinds.length, gap = 34;
+    const cx0 = PX + 200, cx1 = PX + PW;
+    let ix = (cx0 + cx1) / 2 - (n2 * isz + (n2 - 1) * gap) / 2;
+    outfit.kinds.forEach((k, i) => {
+      if (i) s.push(text("+", ix - gap / 2, py + isz / 2, 36, { bold: true, anchor: "mm" }));
+      s.push(garment(k, ix, py, isz));
+      ix += isz + gap;
+    });
+    s.push(text(outfit.label, (cx0 + cx1) / 2, py + 108, 26, { bold: true, anchor: "ma" }));
+  }
+  py += 150;
+  for (const [lbl, d] of weatherRows || []) {
+    if (!d) continue;
+    s.push(text(lbl, PX, py, 28, { bold: true }));
+    s.push(text(`${d.max}° / ${d.min}°`, PX + 250, py, 28, { anchor: "ra" }));
+    s.push(text(`ploaie ${d.rain}%`, PX + PW, py + 2, 24, { fill: 60, anchor: "ra" }));
+    py += 42;
+  }
+
+  // ---- dreapta: luna & soarele
+  py += 10;
+  s.push(`<rect x="${PX}" y="${py}" width="${PW}" height="42" rx="6" fill="black"/>`);
+  s.push(text("LUNA & SOARELE", PX + 12, py + 21, 26, { bold: true, fill: 255, anchor: "lm" }));
+  py += 56;
+  const msize = 210;
+  const moon = moonPNG(msize, ast.lit, ast.waxing).toString("base64");
+  s.push(`<image x="${PX}" y="${py}" width="${msize}" height="${msize}" image-rendering="pixelated" href="data:image/png;base64,${moon}"/>`);
+  s.push(`<circle cx="${PX + msize / 2}" cy="${py + msize / 2}" r="${msize / 2 - 2}" fill="none" stroke="black" stroke-width="2"/>`);
+  const mx = PX + msize + 20;
+  const words = ast.name.split(" ");
+  const nameLines = ast.name.length > 11 ? [words[0], words.slice(1).join(" ")] : [ast.name];
+  let yy = py + 18;
+  const avail = PX + PW - mx;
+  let nfs = 30;
+  while (nfs > 18 && Math.max(...nameLines.map((l) => textWidth(l, nfs, true))) > avail) nfs--;
+  for (const ln of nameLines) { s.push(text(ln, mx, yy, nfs, { bold: true })); yy += nfs + 6; }
+  s.push(text(`${Math.round(ast.lit * 100)}% luminată`, mx, yy + 4, 22));
+  yy += 40;
+  for (const [lbl, dt] of [["Nouă", ast.nextNew], ["Plină", ast.nextFull]].sort((a, b) => a[1] - b[1])) {
+    s.push(text(lbl, mx, yy, 22));
+    s.push(text(shortDate(dt), PX + PW, yy, 22, { bold: true, anchor: "ra" }));
+    yy += 30;
+  }
+  py += msize + 24;
+
+  const sx0 = PX + 10, sx1 = PX + PW - 10;
+  const arcBase = py + 100;
+  const cx = (sx0 + sx1) / 2, rx = (sx1 - sx0) / 2 - 20, ry = 80;
+  s.push(`<path d="M ${cx - rx} ${arcBase} A ${rx} ${ry} 0 0 1 ${cx + rx} ${arcBase}" fill="none" stroke="black" stroke-width="2" stroke-dasharray="8 6"/>`);
+  s.push(`<line x1="${sx0}" y1="${arcBase}" x2="${sx1}" y2="${arcBase}" stroke="black" stroke-width="2"/>`);
+  s.push(`<circle cx="${cx}" cy="${arcBase - ry}" r="10" fill="black"/>`);
+  for (let k = 0; k < 8; k++) {
+    const a = (k * Math.PI) / 4;
+    s.push(`<line x1="${cx + 15 * Math.cos(a)}" y1="${arcBase - ry + 15 * Math.sin(a)}" x2="${cx + 21 * Math.cos(a)}" y2="${arcBase - ry + 21 * Math.sin(a)}" stroke="black" stroke-width="3"/>`);
+  }
+  if (ast.rise && ast.set) {
+    s.push(text("Răsărit", sx0, arcBase + 12, 22));
+    s.push(text("Apus", sx1, arcBase + 12, 22, { anchor: "ra" }));
+    s.push(text(hhmm(ast.rise), sx0, arcBase + 40, 40, { bold: true }));
+    s.push(text(hhmm(ast.set), sx1, arcBase + 40, 40, { bold: true, anchor: "ra" }));
+    const mins = Math.floor((ast.set - ast.rise) / 60000);
+    s.push(text(`${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m de lumină`, cx, arcBase + 100, 24, { anchor: "ma" }));
+  }
+
+  let gray = svgToGray(s, LW, LH);
+  if (rotate === 90 || rotate === 270) return encodeGray(rotateGray(gray, LW, LH, rotate), LH, LW);
+  return encodeGray(gray, LW, LH);
+}

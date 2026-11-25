@@ -5,14 +5,14 @@
 //   ICS_URLS  - linkurile secrete iCal din Google Calendar (separate prin virgulă sau rând nou)
 //   DASH_KEY  - parola din adresă, ca imaginea să nu fie publică
 //   LAT, LON  - opțional, coordonatele pentru vreme și soare (implicit București)
-import { renderDashboard, eventsFor, astro, local, zoned, clothingFor, TZ } from "./lib/render.mjs";
+import { renderDashboard, renderLandscape, eventsFor, astro, local, zoned, clothingFor, TZ } from "./lib/render.mjs";
 
 async function weather(lat, lon) {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=${encodeURIComponent(TZ)}` +
       `&current=temperature_2m,apparent_temperature` +
       `&daily=temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max` +
-      `&forecast_days=2`;
+      `&forecast_days=8`;
     const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
     const j = await r.json();
     const d = j.daily, c = j.current;
@@ -22,7 +22,7 @@ async function weather(lat, lon) {
       rain: d.precipitation_probability_max[i] ?? 0,
       feels: Math.round((d.apparent_temperature_max[i] + d.apparent_temperature_min[i]) / 2),
     });
-    return { now: Math.round(c.temperature_2m), feels: Math.round(c.apparent_temperature), today: day(0), tomorrow: day(1) };
+    return { now: Math.round(c.temperature_2m), feels: Math.round(c.apparent_temperature), days: d.time.map((_, i) => day(i)), today: day(0), tomorrow: day(1) };
   } catch {
     return null;
   }
@@ -50,18 +50,31 @@ export default async (req) => {
     return new Response("Calendar indisponibil", { status: 503 });
   }
 
-  // după ora SWITCH_HOUR (implicit 20:00) se afișează ziua de mâine
+  // Ziua afișată: azi (după ora SWITCH_HOUR, implicit 20:00, mâine) + d zile (d vine de la swipe)
   const switchHour = parseInt(Netlify.env.get("SWITCH_HOUR") || "20", 10);
   const now = local(new Date());
-  const showTomorrow = now.h >= switchHour;
-  const day = showTomorrow ? local(zoned(now.y, now.m, now.d + 1, 12)) : now;
+  const base = now.h >= switchHour ? 1 : 0;
+  const offset = Math.max(-base, Math.min(6, parseInt(url.searchParams.get("d") || "0", 10) || 0));
+  const diff = base + offset; // câte zile după azi
+  const day = diff ? local(zoned(now.y, now.m, now.d + diff, 12)) : now;
+  const ZILE_LUNGI = ["DUMINICĂ", "LUNI", "MARȚI", "MIERCURI", "JOI", "VINERI", "SÂMBĂTĂ"];
+  const label = diff === 0 ? "AZI" : diff === 1 ? "MÂINE" : ZILE_LUNGI[day.wd];
 
   const { events, allday } = eventsFor(day, icsTexts);
   const wx = await weather(lat, lon);
-  const outfit = wx ? clothingFor(showTomorrow ? wx.tomorrow.feels : wx.feels) : null;
-  const png = renderDashboard({
-    day, events, allday, wx, outfit, ast: astro(day, lat, lon), label: showTomorrow ? "MÂINE" : "AZI",
-  });
+  const dayWx = wx ? wx.days[diff] : null;
+  const outfit = wx ? clothingFor(diff === 0 ? wx.feels : dayWx?.feels) : null;
+  const ast = astro(day, lat, lon);
+
+  const rotate = parseInt(url.searchParams.get("r") || "0", 10);
+  let png;
+  if (rotate === 90 || rotate === 270) {
+    const cap = label[0] + label.slice(1).toLowerCase();
+    const weatherRows = diff === 0 ? [["Azi", wx?.today], ["Mâine", wx?.tomorrow]] : [["Azi", wx?.today], [cap, dayWx]];
+    png = renderLandscape({ day, events, allday, wx, ast, label, outfit, weatherRows, rotate });
+  } else {
+    png = renderDashboard({ day, events, allday, wx, outfit, ast, label });
+  }
 
   return new Response(png, {
     headers: { "content-type": "image/png", "cache-control": "no-store" },
