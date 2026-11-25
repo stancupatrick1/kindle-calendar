@@ -3,9 +3,8 @@
 // ca Kindle-ul să redeseneze ecranul doar când se schimbă ceva.
 import opentype from "opentype.js";
 import IcalExpander from "ical-expander";
-import { createRequire } from "node:module";
-// versiunea ESM a astronomy-engine nu e marcată corect ca modul; folosim varianta CommonJS
-const Astronomy = createRequire(import.meta.url)("astronomy-engine");
+// astronomy-engine (licență MIT, github.com/cosinekitty/astronomy), copiat local
+import Astronomy from "./astronomy.cjs";
 import { Resvg } from "@resvg/resvg-js";
 import { PNG } from "pngjs";
 import { REGULAR, BOLD } from "./fonts.mjs";
