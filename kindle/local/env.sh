@@ -9,6 +9,11 @@ export WIFI_TEST_IP=${WIFI_TEST_IP:-1.1.1.1}
 export REFRESH_SCHEDULE="*/5 * * * *"
 export TIMEZONE="Europe/Bucharest"
 
+# Rămâne treaz între actualizări (sigur, ideal la încărcător).
+# Pe baterie poți pune false: doarme între verificări și ține mai mult,
+# dar trezirea automată e mai puțin testată pe Paperwhite 10.
+export NO_SUSPEND=true
+
 # Refresh complet (fără „fantome” pe e-ink) la fiecare 3 schimbări
 export FULL_DISPLAY_REFRESH_RATE=3
 
