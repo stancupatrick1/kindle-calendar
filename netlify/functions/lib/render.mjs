@@ -249,12 +249,42 @@ function layoutColumns(evs) {
   }
 }
 
-export function renderDashboard({ day, events, allday, wx, ast }) {
+// ------------------------------------------------------------ haine
+
+export function clothingFor(feels) {
+  if (feels == null) return null;
+  if (feels >= 18) return { kinds: ["tricou"], label: "Tricou" };
+  if (feels >= 12) return { kinds: ["hanorac"], label: "Hanorac" };
+  if (feels >= 5) return { kinds: ["geaca"], label: "Geacă" };
+  return { kinds: ["hanorac", "geaca"], label: "Hanorac + geacă" };
+}
+
+// iconițe desenate într-o cutie de 100x100
+function garment(kind, x, y, size) {
+  const st = `stroke="black" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"`;
+  let body = "";
+  if (kind === "tricou") {
+    body = `<path d="M30 12 L42 6 Q50 16 58 6 L70 12 L94 30 L82 46 L72 38 L72 94 L28 94 L28 38 L18 46 L6 30 Z" fill="white" ${st}/>`;
+  } else if (kind === "hanorac") {
+    body = `<path d="M30 14 L40 8 L60 8 L70 14 L84 26 L96 86 L82 90 L72 46 L72 96 L28 96 L28 46 L18 90 L4 86 L16 26 Z" fill="white" ${st}/>` +
+      `<path d="M36 14 Q50 -6 64 14 Q62 30 50 30 Q38 30 36 14 Z" fill="white" ${st}/>` +
+      `<path d="M45 30 L44 46 M55 30 L56 46" fill="none" ${st}/>` +
+      `<path d="M36 66 L64 66 L68 86 L32 86 Z" fill="white" ${st}/>`;
+  } else {
+    body = `<path d="M30 12 L42 6 L50 18 L58 6 L70 12 L84 24 L96 86 L82 90 L72 44 L72 96 L28 96 L28 44 L18 90 L4 86 L16 24 Z" fill="${g(70)}" ${st}/>` +
+      `<path d="M42 6 L36 22 L50 18 M58 6 L64 22 L50 18" fill="white" ${st}/>` +
+      `<path d="M50 18 L50 96" fill="none" stroke="white" stroke-width="4"/>` +
+      `<path d="M33 64 L44 64 M56 64 L67 64" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/>`;
+  }
+  return `<g transform="translate(${x},${y}) scale(${size / 100})">${body}</g>`;
+}
+
+export function renderDashboard({ day, events, allday, wx, ast, label = "AZI", outfit }) {
   const s = [];
   const HEADER = 96;
 
   s.push(`<rect x="0" y="0" width="${W}" height="${HEADER}" fill="black"/>`);
-  s.push(text("AZI", M + 8, HEADER / 2, 48, { bold: true, fill: 255, anchor: "lm" }));
+  s.push(text(label, M + 8, HEADER / 2, 48, { bold: true, fill: 255, anchor: "lm" }));
   s.push(text(`${ZILE[day.wd]} ${day.d} ${LUNI[day.m - 1]}`, W - M - 8, HEADER / 2, 48, { bold: true, fill: 255, anchor: "rm" }));
 
   // rezumat
@@ -282,7 +312,7 @@ export function renderDashboard({ day, events, allday, wx, ast }) {
   }
 
   // orarul
-  const bottom = H - 440;
+  const bottom = H - 640;
   let h0 = 7, h1 = 22;
   for (const ev of events) {
     const ls = local(ev.start), le = local(ev.end);
@@ -326,14 +356,48 @@ export function renderDashboard({ day, events, allday, wx, ast }) {
     }
   }
 
-  // panoul Lună & Soare
+  // vremea + ce să porți
   let py = bottom + 10;
   s.push(`<rect x="0" y="${py}" width="${W}" height="52" fill="black"/>`);
-  s.push(text("LUNA & SOARELE", M + 8, py + 26, 32, { bold: true, fill: 255, anchor: "lm" }));
-  if (wx) s.push(text(`Max ${wx.max}°  Min ${wx.min}°`, W - M - 8, py + 26, 30, { bold: true, fill: 255, anchor: "rm" }));
-  py += 72;
+  s.push(text("VREMEA", M + 8, py + 26, 32, { bold: true, fill: 255, anchor: "lm" }));
+  s.push(text(label === "AZI" ? "CE PORȚI AZI" : "CE PORȚI MÂINE", W - M - 8, py + 26, 30, { bold: true, fill: 255, anchor: "rm" }));
+  py += 66;
+  if (wx) {
+    s.push(text(`${wx.now}°`, M, py, 96, { bold: true }));
+    s.push(text(`se simte ca ${wx.feels}°`, M, py + 118, 28));
+    const bx = 290, vx = 600;
+    const rows = [["Azi", wx.today], ["Mâine", wx.tomorrow]];
+    let ry = py + 6;
+    for (const [lbl, d] of rows) {
+      if (!d) continue;
+      s.push(text(lbl, bx, ry, 32, { bold: true }));
+      s.push(text(`${d.max}° / ${d.min}°`, vx, ry, 32, { anchor: "ra" }));
+      s.push(text(`ploaie ${d.rain}%`, bx, ry + 40, 24, { fill: 60 }));
+      ry += 80;
+    }
+  } else {
+    s.push(text("Vremea indisponibilă", M, py + 20, 30));
+  }
+  if (outfit) {
+    const isz = 112, cx0 = 640, cx1 = W - M;
+    const n = outfit.kinds.length;
+    const totalW = n * isz + (n - 1) * 44;
+    let ix = (cx0 + cx1) / 2 - totalW / 2;
+    outfit.kinds.forEach((k, i) => {
+      if (i) { s.push(text("+", ix - 22, py + isz / 2, 44, { bold: true, anchor: "mm" })); }
+      s.push(garment(k, ix, py, isz));
+      ix += isz + 44;
+    });
+    s.push(text(outfit.label, (cx0 + cx1) / 2, py + isz + 14, 30, { bold: true, anchor: "ma" }));
+  }
 
-  const msize = 330;
+  // panoul Lună & Soare
+  py += 180;
+  s.push(`<rect x="0" y="${py}" width="${W}" height="52" fill="black"/>`);
+  s.push(text("LUNA & SOARELE", M + 8, py + 26, 32, { bold: true, fill: 255, anchor: "lm" }));
+  py += 66;
+
+  const msize = 270;
   const moon = moonPNG(msize, ast.lit, ast.waxing).toString("base64");
   s.push(`<image x="${M}" y="${py}" width="${msize}" height="${msize}" image-rendering="pixelated" href="data:image/png;base64,${moon}"/>`);
   s.push(`<circle cx="${M + msize / 2}" cy="${py + msize / 2}" r="${msize / 2 - 2}" fill="none" stroke="black" stroke-width="2"/>`);
@@ -354,7 +418,7 @@ export function renderDashboard({ day, events, allday, wx, ast }) {
 
   // soarele
   const sx0 = col2 + 60, sx1 = W - M;
-  const arcTop = py + 20, arcBase = py + 150;
+  const arcTop = py + 10, arcBase = py + 120;
   const cx = (sx0 + sx1) / 2, rx = (sx1 - sx0) / 2 - 10, ry = arcBase - arcTop - 20;
   s.push(`<path d="M ${cx - rx} ${arcBase} A ${rx} ${ry} 0 0 1 ${cx + rx} ${arcBase}" fill="none" stroke="black" stroke-width="2" stroke-dasharray="9 7"/>`);
   s.push(`<line x1="${sx0}" y1="${arcBase}" x2="${sx1}" y2="${arcBase}" stroke="black" stroke-width="2"/>`);
@@ -368,10 +432,10 @@ export function renderDashboard({ day, events, allday, wx, ast }) {
   if (ast.rise && ast.set) {
     s.push(text("Răsărit", sx0, yy, 26));
     s.push(text("Apus", sx1, yy, 26, { anchor: "ra" }));
-    s.push(text(hhmm(ast.rise), sx0, yy + 34, 46, { bold: true }));
-    s.push(text(hhmm(ast.set), sx1, yy + 34, 46, { bold: true, anchor: "ra" }));
+    s.push(text(hhmm(ast.rise), sx0, yy + 32, 42, { bold: true }));
+    s.push(text(hhmm(ast.set), sx1, yy + 32, 42, { bold: true, anchor: "ra" }));
     const mins = Math.floor((ast.set - ast.rise) / 60000);
-    s.push(text(`${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m de lumină`, (sx0 + sx1) / 2, yy + 104, 28, { anchor: "ma" }));
+    s.push(text(`${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m de lumină`, (sx0 + sx1) / 2, yy + 92, 26, { anchor: "ma" }));
   }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="white"/>${s.join("")}</svg>`;

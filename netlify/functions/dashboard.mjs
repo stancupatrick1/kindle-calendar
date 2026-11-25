@@ -5,16 +5,24 @@
 //   ICS_URLS  - linkurile secrete iCal din Google Calendar (separate prin virgulă sau rând nou)
 //   DASH_KEY  - parola din adresă, ca imaginea să nu fie publică
 //   LAT, LON  - opțional, coordonatele pentru vreme și soare (implicit București)
-import { renderDashboard, eventsFor, astro, local, TZ } from "./lib/render.mjs";
+import { renderDashboard, eventsFor, astro, local, zoned, clothingFor, TZ } from "./lib/render.mjs";
 
-async function weather(lat, lon, day) {
+async function weather(lat, lon) {
   try {
-    const date = `${day.y}-${String(day.m).padStart(2, "0")}-${String(day.d).padStart(2, "0")}`;
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=${encodeURIComponent(TZ)}` +
-      `&daily=temperature_2m_max,temperature_2m_min&start_date=${date}&end_date=${date}`;
+      `&current=temperature_2m,apparent_temperature` +
+      `&daily=temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max` +
+      `&forecast_days=2`;
     const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    const d = (await r.json()).daily;
-    return { max: Math.round(d.temperature_2m_max[0]), min: Math.round(d.temperature_2m_min[0]) };
+    const j = await r.json();
+    const d = j.daily, c = j.current;
+    const day = (i) => ({
+      max: Math.round(d.temperature_2m_max[i]),
+      min: Math.round(d.temperature_2m_min[i]),
+      rain: d.precipitation_probability_max[i] ?? 0,
+      feels: Math.round((d.apparent_temperature_max[i] + d.apparent_temperature_min[i]) / 2),
+    });
+    return { now: Math.round(c.temperature_2m), feels: Math.round(c.apparent_temperature), today: day(0), tomorrow: day(1) };
   } catch {
     return null;
   }
@@ -42,10 +50,18 @@ export default async (req) => {
     return new Response("Calendar indisponibil", { status: 503 });
   }
 
-  const day = local(new Date());
+  // după ora SWITCH_HOUR (implicit 20:00) se afișează ziua de mâine
+  const switchHour = parseInt(Netlify.env.get("SWITCH_HOUR") || "20", 10);
+  const now = local(new Date());
+  const showTomorrow = now.h >= switchHour;
+  const day = showTomorrow ? local(zoned(now.y, now.m, now.d + 1, 12)) : now;
+
   const { events, allday } = eventsFor(day, icsTexts);
-  const [wx] = await Promise.all([weather(lat, lon, day)]);
-  const png = renderDashboard({ day, events, allday, wx, ast: astro(day, lat, lon) });
+  const wx = await weather(lat, lon);
+  const outfit = wx ? clothingFor(showTomorrow ? wx.tomorrow.feels : wx.feels) : null;
+  const png = renderDashboard({
+    day, events, allday, wx, outfit, ast: astro(day, lat, lon), label: showTomorrow ? "MÂINE" : "AZI",
+  });
 
   return new Response(png, {
     headers: { "content-type": "image/png", "cache-control": "no-store" },
